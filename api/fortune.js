@@ -1,31 +1,33 @@
 export default async function handler(req, res) {
   try {
-    // 你原来的代码从这里开始
-    
-import OpenAI from "openai";
+    if (req.method === "GET") {
+      return res.status(200).json({ ok: true, hint: "Use POST with JSON body." });
+    }
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method Not Allowed" });
-  }
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method Not Allowed", hint: "Use POST" });
+    }
 
-  const {
-    name,
-    gender,
-    birthDate,
-    birthTime,
-    birthCity
-  } = req.body;
+    const body = req.body ?? {};
+    const {
+      name = "",
+      gender = "",
+      birthDate,
+      birthTime = "",
+      birthCity = ""
+    } = body;
 
-  // 这里之后接你已经写好的 prompt + OpenAI 调用
-  res.status(200).json({
-    east: { score: 72 },
-    west: { score: 65 },
-    common: { score: 70 }
-  });
-}
+    if (!birthDate) {
+      return res.status(400).json({ error: "birthDate is required", receivedBody: body });
+    }
 
-    // ...
+    return res.status(200).json({
+      ok: true,
+      received: { name, gender, birthDate, birthTime, birthCity },
+      east: { score: 72 },
+      west: { score: 65 },
+      common: { score: 70 }
+    });
   } catch (e) {
     return res.status(500).json({
       error: "Server error",
@@ -34,5 +36,3 @@ export default async function handler(req, res) {
     });
   }
 }
-
-
