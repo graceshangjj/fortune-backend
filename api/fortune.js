@@ -1,3 +1,7 @@
+export default async function handler(req, res) {
+  try {
+    // 你原来的代码从这里开始
+    
 import OpenAI from "openai";
 
 export default async function handler(req, res) {
@@ -20,3 +24,15 @@ export default async function handler(req, res) {
     common: { score: 70 }
   });
 }
+
+    // ...
+  } catch (e) {
+    return res.status(500).json({
+      error: "Server error",
+      message: String(e?.message || e),
+      stack: e?.stack || null
+    });
+  }
+}
+
+
