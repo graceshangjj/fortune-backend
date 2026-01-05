@@ -1,49 +1,89 @@
-import OpenAI from "openai";
-
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-// ✅ 只允许从这些 handle 里推荐（你后面换成真实商品）
-const ALLOWED_HANDLES = [
-  "fox-charm",
-  "rose-quartz-bracelet",
-  "obsidian-ring",
-  "detailed-reading"
-];
-
-function clampScore(n) {
-  const x = Number(n);
-  if (Number.isNaN(x)) return 50;
-  return Math.max(0, Math.min(100, Math.round(x)));
+function cors(res) {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
-function normalizeLevel(score) {
-  if (score <= 40) return "low";
-  if (score <= 70) return "mid";
-  return "high";
+function parseUnlockCodes() {
+  // 在 Vercel 环境变量里配置：UNLOCK_CODES="CODE1,CODE2,CODE3"
+  const raw = process.env.UNLOCK_CODES || "";
+  return raw
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
 }
 
-function enforceHandles(recs = []) {
-  return (Array.isArray(recs) ? recs : [])
-    .filter(r => r && ALLOWED_HANDLES.includes(r.handle))
-    .slice(0, 3);
+function isValidUnlockCode(code, allowed) {
+  if (!code) return false;
+  const normalized = String(code).trim();
+  return allowed.includes(normalized);
+}
+
+function buildFreeResult({ birthDate, birthTime, birthCity }) {
+  // ✅ 免费内容：先用稳定的“轻量版”，之后你再换成 OpenAI 生成也行
+  // 这里做一个简单的“伪差异化”，让用户每次输入不同也会略不同
+  const seed = `${birthDate || ""}-${birthTime || ""}-${birthCity || ""}`.length;
+
+  const eastLove = 50 + (seed % 20);
+  const westLove = 48 + ((seed + 7) % 22);
+  const commonScore = 55 + ((seed + 3) % 18);
+
+  return {
+    east: {
+      summary: "东方视角：强调情绪稳定与人际边界，适合用“温和但坚定”的方式推进关系。",
+      love: { score: eastLove, level: eastLove <= 40 ? "low" : eastLove <= 70 ? "mid" : "high", insight: "别急着证明自己，先把底线说清楚。" },
+      career: { score: 72, level: "high", insight: "适合把目标拆小，持续推进，贵在坚持。" },
+      money: { score: 61, level: "mid", insight: "控制冲动消费，先存后花更稳。" },
+      actions: ["睡眠优先", "减少内耗沟通", "做一件能立刻完成的小事"]
+    },
+    west: {
+      summary: "西方视角：更偏向自我节奏与自我价值感重建，适合“慢一点、准一点”。",
+      love: { score: westLove, level: westLove <= 40 ? "low" : westLove <= 70 ? "mid" : "high", insight: "用更清晰的表达替代揣测。" },
+      career: { score: 68, level: "mid", insight: "提升曝光与表达，你的机会来自被看见。" },
+      money: { score: 59, level: "mid", insight: "把预算按周拆分，减少焦虑。" },
+      actions: ["写下3个真正想要的", "每天一次主动表达", "减少无效社交"]
+    },
+    common: {
+      themes: ["稳定", "边界", "节奏感"],
+      what_to_focus: ["持续行动", "清晰表达", "情绪管理"],
+      what_to_avoid: ["过度解读", "情绪化决策", "冲动消费"],
+      score: commonScore
+    }
+  };
+}
+
+function buildPaidDeepDive({ free }) {
+  // ✅ 付费内容：先用结构化模板，后面你可以再接 OpenAI 深度解读
+  const loveLevel = free?.east?.love?.level || "mid";
+  const focus = loveLevel === "low" ? "修复关系能量与边界" : "把关系推进到更稳定的阶段";
+
+  return {
+    title: "详细解读：30 天行动方案",
+    focus,
+    timeline: [
+      { week: 1, goal: "稳住节奏，减少内耗", tasks: ["每天 10 分钟写情绪日记", "做一次断舍离（关系/物品）"] },
+      { week: 2, goal: "修复表达方式", tasks: ["练习 1 次清晰表达需求", "减少试探式沟通"] },
+      { week: 3, goal: "建立吸引力与稳定感", tasks: ["建立运动/睡眠习惯", "安排一次高质量社交"] },
+      { week: 4, goal: "复盘并升级", tasks: ["复盘最有效的方法", "制定下个月策略"] }
+    ],
+    product_recos: [
+      { handle: "fox-charm", reason: "偏向关系守护与自信提升，适合低迷阶段的稳定支持。", tag: "love_guard" }
+    ],
+    disclaimer: "For entertainment and self-reflection only."
+  };
 }
 
 export default async function handler(req, res) {
   try {
-    // ===== CORS 预检 =====
+    // CORS 预检
     if (req.method === "OPTIONS") {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      cors(res);
       return res.status(204).end();
     }
-    res.setHeader("Access-Control-Allow-Origin", "*");
+    cors(res);
 
     if (req.method === "GET") {
-      return res.status(200).json({
-        ok: true,
-        hint: "Use POST /api/fortune with JSON body."
-      });
+      return res.status(200).json({ ok: true, hint: "Use POST /api/fortune with JSON body." });
     }
 
     if (req.method !== "POST") {
@@ -51,138 +91,42 @@ export default async function handler(req, res) {
     }
 
     const body = req.body ?? {};
-    const {
-      name = "",
-      gender = "",
-      birthDate,
-      birthTime = "",
-      birthCity = ""
-    } = body;
+    const { name = "", gender = "", birthDate, birthTime = "", birthCity = "", unlock_code = "" } = body;
 
     if (!birthDate) {
       return res.status(400).json({ error: "birthDate is required", receivedBody: body });
     }
 
-    if (!process.env.OPENAI_API_KEY) {
-      return res.status(500).json({ error: "Missing OPENAI_API_KEY in Vercel env vars" });
-    }
+    // Step A：先生成免费内容（永远返回）
+    const free = buildFreeResult({ birthDate, birthTime, birthCity });
 
-    // ===== 让模型输出 JSON（我们再做一层校验兜底）=====
-    const system = `
-你是一个“命理内容生成器”，必须输出严格的 JSON（不要 markdown，不要多余文字）。
-要求包含三大模块：east（东方玄学）、west（西方玄学）、common（共同点），并给出商品推荐 recommendations 与付费 upsell。
+    // Step B：校验是否已付费（unlock_code）
+    const allowedCodes = parseUnlockCodes();
+    const unlocked = isValidUnlockCode(unlock_code, allowedCodes);
 
-注意：
-- 不要声称做了精确排盘，不要编造具体星曜落宫/精确行星相位/度数。
-- 分数 score 0-100；level 只能是 low/mid/high；love/career/money 需要合理且有区分。
-- recommendations 只能从允许的 handle 列表中挑选（不要自造）。
-`;
-
-    const user = {
-      input: { name, gender, birthDate, birthTime, birthCity },
-      allowed_handles: ALLOWED_HANDLES,
-      rules: {
-        recommend_strategy: [
-          "如果 love 偏低：推荐 1-2 个 love_boost / love_guard 相关商品（例如 fox-charm）。",
-          "如果 overall level 为 low：upsell.should_offer = true，pitch 要自然且有说服力。",
-          "如果整体较好：upsell 也可以 true，但 pitch 更轻量（进阶解读/年度规划）。"
-        ]
-      },
-      output_schema_hint: {
-        overall: { score: 0, level: "mid", one_liner: "" },
-        east: {
-          summary: "",
-          love: { score: 0, level: "mid", insight: "" },
-          career: { score: 0, level: "mid", insight: "" },
-          money: { score: 0, level: "mid", insight: "" },
-          actions: []
-        },
-        west: {
-          summary: "",
-          love: { score: 0, level: "mid", insight: "" },
-          career: { score: 0, level: "mid", insight: "" },
-          money: { score: 0, level: "mid", insight: "" },
-          actions: []
-        },
-        common: {
-          themes: [],
-          what_to_focus: [],
-          what_to_avoid: []
-        },
-        recommendations: [{ handle: "", reason: "", tag: "" }],
-        upsell: { should_offer: true, detailed_product_handle: "detailed-reading", pitch: "" },
-        disclaimer: ""
-      }
-    };
-
-    // 用 Responses API（更稳）
-    const resp = await client.responses.create({
-      model: "gpt-4.1-mini",
-      input: [
-        { role: "system", content: system },
-        { role: "user", content: JSON.stringify(user) }
-      ],
-      temperature: 0.8
-    });
-
-    const text = resp.output_text?.trim?.() || "";
-    let data;
-    try {
-      data = JSON.parse(text);
-    } catch {
-      // 如果模型没输出纯 JSON，兜底
-      data = null;
-    }
-
-    if (!data) {
+    if (unlocked) {
+      const deep_dive = buildPaidDeepDive({ free });
       return res.status(200).json({
         ok: true,
-        warning: "Model did not return valid JSON. Using fallback.",
-        overall: { score: 70, level: "mid", one_liner: "Energy is steady—focus on consistency." },
-        east: { summary: "", love: { score: 62, level: "mid", insight: "" }, career: { score: 74, level: "high", insight: "" }, money: { score: 66, level: "mid", insight: "" }, actions: [] },
-        west: { summary: "", love: { score: 58, level: "mid", insight: "" }, career: { score: 72, level: "high", insight: "" }, money: { score: 64, level: "mid", insight: "" }, actions: [] },
-        common: { themes: ["stability"], what_to_focus: ["clarity"], what_to_avoid: ["overthinking"] },
-        recommendations: [{ handle: "fox-charm", reason: "Support confidence and relationship clarity.", tag: "love_guard" }],
-        upsell: { should_offer: true, detailed_product_handle: "detailed-reading", pitch: "Unlock a deeper, actionable reading for the next 30 days." },
-        disclaimer: "For entertainment and self-reflection only."
+        user: { name, gender, birthDate, birthTime, birthCity },
+        free,
+        paid: { unlocked: true, deep_dive },
+        upsell: { should_offer: false }
       });
     }
 
-    // ===== 二次校验：修正 score/level + 限制 handle =====
-    const overallScore = clampScore(data?.overall?.score);
-    const normalized = {
-      ...data,
+    // 未解锁：返回 upsell 信息（前端展示购买按钮）
+    return res.status(200).json({
       ok: true,
-      overall: {
-        score: overallScore,
-        level: data?.overall?.level ?? normalizeLevel(overallScore),
-        one_liner: data?.overall?.one_liner ?? ""
+      user: { name, gender, birthDate, birthTime, birthCity },
+      free,
+      paid: { unlocked: false, deep_dive: null },
+      upsell: {
+        should_offer: true,
+        product_handle: "detailed-reading",
+        pitch: "想要更详细的解读吗？解锁你的专属建议（30天行动方案 + 重点提醒 + 推荐配饰）。"
       }
-    };
-
-    // normalize each section
-    for (const k of ["east", "west"]) {
-      for (const dim of ["love", "career", "money"]) {
-        const s = clampScore(normalized?.[k]?.[dim]?.score);
-        normalized[k][dim] = {
-          ...normalized[k][dim],
-          score: s,
-          level: normalized?.[k]?.[dim]?.level ?? normalizeLevel(s)
-        };
-      }
-      normalized[k].actions = Array.isArray(normalized?.[k]?.actions) ? normalized[k].actions.slice(0, 5) : [];
-    }
-
-    normalized.recommendations = enforceHandles(normalized?.recommendations);
-    if (!normalized.recommendations.length) {
-      normalized.recommendations = [{ handle: "fox-charm", reason: "A gentle support item to boost confidence.", tag: "love_guard" }];
-    }
-
-    if (!normalized.upsell) normalized.upsell = {};
-    normalized.upsell.detailed_product_handle = "detailed-reading";
-    normalized.disclaimer = normalized.disclaimer || "For entertainment and self-reflection only.";
-
-    return res.status(200).json(normalized);
+    });
   } catch (e) {
     return res.status(500).json({
       error: "Server error",
