@@ -30,14 +30,14 @@ function buildFreeResult({ birthDate, birthTime, birthCity }) {
 
   return {
     east: {
-      summary: "东方视角：强调情绪稳定与人际边界，适合用“温和但坚定”的方式推进关系。",
+      summary: "强调情绪稳定与人际边界，适合用“温和但坚定”的方式推进关系。",
       love: { score: eastLove, level: eastLove <= 40 ? "low" : eastLove <= 70 ? "mid" : "high", insight: "别急着证明自己，先把底线说清楚。" },
       career: { score: 72, level: "high", insight: "适合把目标拆小，持续推进，贵在坚持。" },
       money: { score: 61, level: "mid", insight: "控制冲动消费，先存后花更稳。" },
       actions: ["睡眠优先", "减少内耗沟通", "做一件能立刻完成的小事"]
     },
     west: {
-      summary: "西方视角：更偏向自我节奏与自我价值感重建，适合“慢一点、准一点”。",
+      summary: "更偏向自我节奏与自我价值感重建，适合“慢一点、准一点”。",
       love: { score: westLove, level: westLove <= 40 ? "low" : westLove <= 70 ? "mid" : "high", insight: "用更清晰的表达替代揣测。" },
       career: { score: 68, level: "mid", insight: "提升曝光与表达，你的机会来自被看见。" },
       money: { score: 59, level: "mid", insight: "把预算按周拆分，减少焦虑。" },
